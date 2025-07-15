@@ -142,7 +142,67 @@ The application will start at `http://localhost:8080` and will automatically:
 
 ---
 
-## 📬 cURL Examples
+## 📬 Test Endpoints
+
+### Base URL
+
+```
+http://localhost:8080
+```
+
+### 🔧 Debug
+
+* `GET /api/search/debug` — Check if data is loaded
+* `GET /api/search/test?query=programming` — Basic test query
+
+### 🔍 Search
+
+* `GET /api/search` — Get all courses
+* `GET /api/search?q=programming` — Search by keyword
+* `GET /api/search?q=prog` — Partial match
+
+### 📂 Filter Examples
+
+* `GET /api/search?category=Technology`
+* `GET /api/search?type=COURSE`
+* `GET /api/search?minAge=10&maxAge=14`
+* `GET /api/search?minPrice=100&maxPrice=300`
+* `GET /api/search?startDate=2025-08-15T10:00:00`
+
+### 🔀 Combined Filters
+
+* `GET /api/search?q=programming&category=Technology&minAge=11&maxAge=16`
+* `GET /api/search?category=Science&type=CLUB&maxPrice=200`
+
+### 📄 Pagination
+
+* `GET /api/search?page=0&size=5`
+
+### 📊 Sorting
+
+* `GET /api/search?sort=upcoming`
+* `GET /api/search?sort=price_asc`
+
+### 💡 Suggestions
+
+* `GET /api/search/suggest?q=prog`
+* `GET /api/search/suggest?q=math`
+
+### ❗ Edge Cases
+
+* `GET /api/search?q=` — Empty query
+* `GET /api/search?q=C++` — Special characters
+* `GET /api/search?type=INVALID_TYPE` — Invalid type
+
+---
+
+## 📎 Postman Documentation
+
+You can import this [Postman Collection](https://www.postman.com/) to try out the API endpoints interactively.
+
+---
+
+## 📌 cURL Examples
 
 ```bash
 # Basic search
@@ -157,12 +217,6 @@ curl "http://localhost:8080/api/search/suggest?q=prog"
 # Debug endpoint
 curl "http://localhost:8080/api/search/debug"
 ```
-
----
-
-## 📎 Postman Documentation
-
-You can import this [Postman Collection](https://.postman.co/workspace/My-Workspace~c6f8ee31-18ff-4f62-81ab-0a433e1295ee/collection/36707245-d73d40de-d4c8-4f6d-8a68-7f4fa1d6a17a?action=share&creator=36707245) to try out the API endpoints interactively.
 
 ---
 
