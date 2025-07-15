@@ -1,30 +1,34 @@
 package com.undoschool.demo.model;
 
-
-
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.elasticsearch.annotations.CompletionField;
-import org.springframework.data.elasticsearch.annotations.Document;
-import org.springframework.data.elasticsearch.annotations.Field;
-import org.springframework.data.elasticsearch.annotations.FieldType;
+import org.springframework.data.elasticsearch.annotations.*;
 import org.springframework.data.elasticsearch.core.suggest.Completion;
 
 import java.time.LocalDateTime;
 
+@Document(indexName = "courses")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(indexName = "courses")
+@JsonIgnoreProperties(ignoreUnknown = true)
+@Setting(settingPath = "/elasticsearch/courses-settings.json")
 public class CourseDocument {
 
     @Id
     private String id;
 
-    @Field(type = FieldType.Text, analyzer = "standard")
+    @MultiField(
+            mainField = @Field(type = FieldType.Text, analyzer = "english"),
+            otherFields = {
+                    @InnerField(suffix = "keyword", type = FieldType.Keyword),
+                    @InnerField(suffix = "edge_ngram", type = FieldType.Text, analyzer = "edge_ngram_analyzer")
+            }
+    )
     private String title;
 
     @Field(type = FieldType.Text, analyzer = "standard")
@@ -48,11 +52,12 @@ public class CourseDocument {
     @Field(type = FieldType.Double)
     private Double price;
 
-    @Field(type = FieldType.Date, format = {}, pattern = "uuuu-MM-dd'T'HH:mm:ss")
+    // Fixed date field configuration to match the mapping
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Field(type = FieldType.Date, format = {}, pattern = "yyyy-MM-dd'T'HH:mm:ss||yyyy-MM-dd'T'HH:mm||strict_date_optional_time")
     private LocalDateTime nextSessionDate;
 
-    @CompletionField(maxInputLength = 100)
+    @CompletionField
     private Completion suggest;
 
     public enum CourseType {

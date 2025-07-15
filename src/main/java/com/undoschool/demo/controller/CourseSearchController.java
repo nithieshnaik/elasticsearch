@@ -6,16 +6,20 @@ import com.undoschool.demo.dto.CourseSearchResponse;
 import com.undoschool.demo.model.CourseDocument;
 import com.undoschool.demo.service.CourseSearchService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/search")
 @RequiredArgsConstructor
 public class CourseSearchController {
 
+    @Autowired
     private CourseSearchService courseSearchService;
 
     @GetMapping
@@ -69,6 +73,43 @@ public class CourseSearchController {
     public ResponseEntity<List<String>> getSuggestions(@RequestParam String q) {
         List<String> suggestions = courseSearchService.getSuggestions(q);
         return ResponseEntity.ok(suggestions);
+    }
+
+   @GetMapping("/debug")
+    public ResponseEntity<Map<String, Object>> debugSearch() {
+        Map<String, Object> debug = new HashMap<>();
+
+        try {
+            long totalCount = courseSearchService.getTotalCourseCount();
+            List<CourseDocument> allCourses = courseSearchService.getAllCourses();
+
+            debug.put("totalCount", totalCount);
+            debug.put("courses", allCourses);
+            debug.put("indexExists", totalCount > 0);
+
+            return ResponseEntity.ok(debug);
+        } catch (Exception e) {
+            debug.put("error", e.getMessage());
+            return ResponseEntity.status(500).body(debug);
+        }
+    }
+
+    // Add this endpoint to test specific queries
+    @GetMapping("/test")
+    public ResponseEntity<Object> testQuery(@RequestParam String query) {
+        try {
+            CourseSearchRequest request = new CourseSearchRequest();
+            request.setQ(query);
+            request.setPage(0);
+            request.setSize(10);
+
+            CourseSearchResponse response = courseSearchService.searchCourses(request);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.status(500).body(error);
+        }
     }
 }
 

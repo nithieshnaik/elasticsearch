@@ -6,7 +6,6 @@ import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.elasticsearch.core.search.CompletionSuggest;
 import co.elastic.clients.elasticsearch.core.search.CompletionSuggestOption;
 import co.elastic.clients.json.JsonData;
 import com.undoschool.demo.dto.CourseSearchRequest;
@@ -16,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -40,8 +40,14 @@ public class CourseSearchService {
         }
 
         try {
+            log.info("Searching with request: {}", request);
             SearchRequest searchRequest = buildSearchRequest(request);
+            log.debug("Final Elasticsearch query: {}", searchRequest.toString());
+
             SearchResponse<CourseDocument> response = elasticsearchClient.search(searchRequest, CourseDocument.class);
+            log.info("Search response - Total hits: {}",
+                    response.hits().total() != null ? response.hits().total().value() : "null");
+
             return buildSearchResponse(response, request);
         } catch (Exception e) {
             log.error("Error searching courses with request: {}", request, e);
@@ -94,33 +100,78 @@ public class CourseSearchService {
     }
 
     private SearchRequest buildSearchRequest(CourseSearchRequest request) {
+        return SearchRequest.of(s -> s
+                .index(coursesIndex)
+                .query(buildQuery(request))
+                .sort(buildSort(request.getSort()))
+                .from(request.getPage() * request.getSize())
+                .size(request.getSize())
+                .highlight(h -> h
+                        .fields("title", f -> f.preTags("<em>").postTags("</em>"))
+                        .fields("description", f -> f.preTags("<em>").postTags("</em>"))
+                )
+        );
+    }
+
+    private Query buildQuery(CourseSearchRequest request) {
         BoolQuery.Builder boolQuery = new BoolQuery.Builder();
-        addSearchQuery(request, boolQuery);
+
+        // Search query handling
+        if (StringUtils.hasText(request.getQ())) {
+            String query = request.getQ().trim().toLowerCase();
+            log.info("Building search query for: '{}'", query);
+
+            // Exact match with high boost
+            boolQuery.should(Query.of(q -> q
+                    .match(m -> m
+                            .field("title")
+                            .query(query)
+                            .boost(3.0f)
+                    )
+            ));
+
+            // Edge ngram for partial matches
+            boolQuery.should(Query.of(q -> q
+                    .match(m -> m
+                            .field("title.edge_ngram")
+                            .query(query)
+                            .boost(2.0f)
+                    )
+            ));
+
+            // Standard multi-match with fuzziness
+            boolQuery.should(Query.of(q -> q
+                    .multiMatch(m -> m
+                            .query(query)
+                            .fields("title^3", "description^2", "category")
+                            .type(TextQueryType.BestFields)
+                            .fuzziness("AUTO")
+                            .operator(Operator.Or)
+                    )
+            ));
+
+            // Wildcard as fallback
+            boolQuery.should(Query.of(q -> q
+                    .wildcard(w -> w
+                            .field("title")
+                            .value("*" + query + "*")
+                            .boost(0.5f)
+                    )
+            ));
+
+            boolQuery.minimumShouldMatch("1");
+        } else {
+            boolQuery.must(Query.of(q -> q.matchAll(MatchAllQuery.of(m -> m))));
+        }
+
+        // Add filters
         addAgeFilters(request, boolQuery);
         addCategoryFilter(request, boolQuery);
         addTypeFilter(request, boolQuery);
         addPriceFilters(request, boolQuery);
         addDateFilter(request, boolQuery);
 
-        return SearchRequest.of(s -> s
-                .index(coursesIndex)
-                .query(boolQuery.build()._toQuery())
-                .sort(buildSort(request.getSort()))
-                .from(request.getPage() * request.getSize())
-                .size(request.getSize())
-        );
-    }
-
-    private void addSearchQuery(CourseSearchRequest request, BoolQuery.Builder boolQuery) {
-        if (request.getQ() != null && !request.getQ().trim().isEmpty()) {
-            boolQuery.must(Query.of(q -> q
-                    .multiMatch(m -> m
-                            .query(request.getQ())
-                            .fields("title^2", "description")
-                            .fuzziness("AUTO")
-                    )
-            ));
-        }
+        return boolQuery.build()._toQuery();
     }
 
     private void addAgeFilters(CourseSearchRequest request, BoolQuery.Builder boolQuery) {
@@ -230,5 +281,52 @@ public class CourseSearchService {
         int totalPages = (int) Math.ceil((double) total / request.getSize());
 
         return new CourseSearchResponse(total, courses, request.getPage(), request.getSize(), totalPages);
+    }
+
+    public long getTotalCourseCount() {
+        try {
+            SearchRequest countRequest = SearchRequest.of(s -> s
+                    .index(coursesIndex)
+                    .query(Query.of(q -> q.matchAll(MatchAllQuery.of(m -> m))))
+                    .size(0)
+            );
+
+            SearchResponse<CourseDocument> response = elasticsearchClient.search(countRequest, CourseDocument.class);
+            long total = Optional.ofNullable(response.hits())
+                    .map(hits -> hits.total())
+                    .map(totalHits -> totalHits.value())
+                    .orElse(0L);
+
+            log.info("Total courses in index '{}': {}", coursesIndex, total);
+            return total;
+        } catch (Exception e) {
+            log.error("Error counting courses", e);
+            return 0;
+        }
+    }
+
+    public List<CourseDocument> getAllCourses() {
+        try {
+            SearchRequest searchRequest = SearchRequest.of(s -> s
+                    .index(coursesIndex)
+                    .query(Query.of(q -> q.matchAll(MatchAllQuery.of(m -> m))))
+                    .size(100)
+            );
+
+            SearchResponse<CourseDocument> response = elasticsearchClient.search(searchRequest, CourseDocument.class);
+            List<CourseDocument> courses = Optional.ofNullable(response.hits())
+                    .map(hits -> hits.hits())
+                    .orElse(Collections.emptyList())
+                    .stream()
+                    .map(Hit::source)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            log.info("Retrieved {} courses from index", courses.size());
+            return courses;
+        } catch (Exception e) {
+            log.error("Error getting all courses", e);
+            return Collections.emptyList();
+        }
     }
 }
